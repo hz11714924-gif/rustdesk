@@ -120,7 +120,21 @@ jobs:
         run: |
           flutter precache --windows
           if ($LASTEXITCODE -ne 0) { throw 'Flutter precache failed' }
-          Invoke-WebRequest https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile engine.zip
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci' } -Uri 'https://api.github.com/repos/rustdesk/engine/releases/assets/210168939?download=1' -OutFile engine.zip
+              if ((Get-Item -LiteralPath engine.zip).Length -ne 63301215) { throw 'Unexpected Flutter engine archive length' }
+              $stream = [System.IO.File]::OpenRead((Join-Path $PWD 'engine.zip'))
+              try {
+                if ($stream.ReadByte() -ne 0x50 -or $stream.ReadByte() -ne 0x4B) { throw 'Flutter engine archive is not a ZIP file' }
+              } finally { $stream.Dispose() }
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Warning "Flutter engine download attempt $attempt failed; retrying in 10 seconds"
+              Start-Sleep -Seconds 10
+            }
+          }
           Expand-Archive engine.zip -DestinationPath engine
           $enginePath = Join-Path '${{ steps.flutter.outputs['CACHE-PATH'] }}' 'bin/cache/artifacts/engine/windows-x64-release'
           Copy-Item engine/* -Destination $enginePath -Recurse -Force
