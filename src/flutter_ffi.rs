@@ -1234,6 +1234,10 @@ pub fn main_http_request(url: String, method: String, body: Option<String>, head
 }
 
 pub fn main_get_local_option(key: String) -> SyncReturn<String> {
+    #[cfg(target_os = "windows")]
+    if let Some(value) = crate::screen_wall_settings::get(&key) {
+        return SyncReturn(value);
+    }
     SyncReturn(get_local_option(key))
 }
 
@@ -1275,6 +1279,10 @@ pub fn main_set_env(key: String, value: Option<String>) -> SyncReturn<()> {
 }
 
 pub fn main_set_local_option(key: String, value: String) {
+    #[cfg(target_os = "windows")]
+    if crate::screen_wall_settings::set(&key, &value) {
+        return;
+    }
     let is_texture_render_key = key.eq(keys::OPTION_TEXTURE_RENDER);
     let is_d3d_render_key = key.eq(keys::OPTION_ALLOW_D3D_RENDER);
     set_local_option(key, value.clone());

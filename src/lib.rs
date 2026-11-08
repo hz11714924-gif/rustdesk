@@ -78,3 +78,7 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 mod kcp_stream;
+#[cfg(target_os = "windows")]
+mod low_frequency_preview;
+#[cfg(target_os = "windows")]
+mod screen_wall_settings;

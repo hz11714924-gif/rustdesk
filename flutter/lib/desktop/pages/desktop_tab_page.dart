@@ -3,6 +3,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
+import 'package:flutter_hbb/desktop/pages/screen_wall_page.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
@@ -52,6 +53,16 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
         page: DesktopHomePage(
           key: const ValueKey(kTabLabelHomePage),
         )));
+    if (isWindows) {
+      tabController.add(TabInfo(
+          key: screenWallTabKey,
+          label: '屏幕墙',
+          selectedIcon: Icons.grid_view,
+          unselectedIcon: Icons.grid_view_outlined,
+          closable: false,
+          page: const ScreenWallPage(key: ValueKey(screenWallTabKey))));
+      tabController.jumpToByKey(kTabLabelHomePage, callOnSelected: false);
+    }
     if (bind.isIncomingOnly()) {
       tabController.onSelected = (key) {
         if (key == kTabLabelHomePage) {
@@ -68,6 +79,7 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
   @override
   void initState() {
     super.initState();
+    if (isWindows) ScreenWallPage.resumeUploads();
     // HardwareKeyboard.instance.addHandler(_handleKeyEvent);
   }
 
