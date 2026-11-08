@@ -376,7 +376,7 @@ mod windows_capture {
             if source_width <= 0 || source_height <= 0 {
                 return Err("Primary screen is unavailable".to_owned());
             }
-            let scale = (640.0 / source_width as f64).min(360.0 / source_height as f64).min(1.0);
+            let scale = (480.0 / source_width as f64).min(270.0 / source_height as f64).min(1.0);
             let width = ((source_width as f64 * scale).floor() as i32).max(1);
             let height = ((source_height as f64 * scale).floor() as i32).max(1);
             let screen = ScreenDc(GetDC(ptr::null_mut()));
@@ -417,7 +417,7 @@ mod windows_capture {
                 rgb.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
             }
             let mut jpeg = Vec::new();
-            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 55)
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 35)
                 .encode(&rgb, width as _, height as _, image::ColorType::Rgb8)
                 .map_err(|_| "Unable to encode preview image".to_owned())?;
             Ok(jpeg)
