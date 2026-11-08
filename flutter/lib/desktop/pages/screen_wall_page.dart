@@ -144,6 +144,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
   }
 
   Future<void> _showSettings() async {
+    if (bind.isDisableSettings()) return;
     final api = TextEditingController(text: _config.apiUrl);
     final ca = TextEditingController(text: _config.caPem);
     final viewer = TextEditingController(text: _config.viewerToken);
@@ -438,7 +439,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: () => connect(context, device.id),
+        onTap: bind.isIncomingOnly() ? null : () => connect(context, device.id),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -538,7 +539,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            if (!configured) ...[
+            if (!configured && !bind.isDisableSettings()) ...[
               const SizedBox(height: 16),
               OutlinedButton(onPressed: _showSettings, child: const Text('打开设置')),
             ],
@@ -576,11 +577,12 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                     icon: const Icon(Icons.refresh),
                   ),
                   const SizedBox(width: 6),
-                  OutlinedButton.icon(
-                    onPressed: _showSettings,
-                    icon: const Icon(Icons.settings_outlined, size: 18),
-                    label: const Text('设置'),
-                  ),
+                  if (!bind.isDisableSettings())
+                    OutlinedButton.icon(
+                      onPressed: _showSettings,
+                      icon: const Icon(Icons.settings_outlined, size: 18),
+                      label: const Text('设置'),
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
