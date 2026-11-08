@@ -347,7 +347,7 @@ mod windows_capture {
         let mut name = [0u16; 256];
         let mut needed = 0;
         if desktop.is_null() || GetUserObjectInformationW(
-            desktop as _, UOI_NAME, name.as_mut_ptr() as _,
+            desktop as _, UOI_NAME as _, name.as_mut_ptr() as _,
             (name.len() * size_of::<u16>()) as _, &mut needed,
         ) == 0 {
             return Err("Interactive desktop is unavailable".to_owned());
