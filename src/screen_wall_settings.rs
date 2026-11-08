@@ -18,6 +18,7 @@ use winapi::{
 const SETTINGS_KEY: &str = "screen-wall-config";
 const STATUS_KEY: &str = "screen-wall-status";
 const MAX_SETTINGS_BYTES: usize = 64 * 1024;
+const MAX_PRIVATE_SETTINGS_BYTES: usize = 32 * 1024;
 const MAGIC: &[u8] = b"RustDeskScreenWall\x01";
 
 lazy_static::lazy_static! {
@@ -35,6 +36,7 @@ struct Settings {
     upload_token: String,
     device_name: String,
     interval_seconds: u64,
+    credentials_managed: bool,
 }
 
 impl Default for Settings {
@@ -47,14 +49,15 @@ impl Default for Settings {
             upload_token: String::new(),
             device_name: String::new(),
             interval_seconds: 300,
+            credentials_managed: false,
         }
     }
 }
 
 impl Settings {
     fn validate(&self) -> Result<(), String> {
-        if !(30..=86_400).contains(&self.interval_seconds) {
-            return Err("Refresh interval must be between 30 and 86400 seconds".into());
+        if !(1..=86_400).contains(&self.interval_seconds) {
+            return Err("Refresh interval must be between 1 and 86400 seconds".into());
         }
         if self.api_url.len() > 2048 || self.device_name.chars().count() > 80 {
             return Err("Preview settings exceed the supported length".into());
@@ -142,11 +145,58 @@ fn protect(bytes: &[u8], decrypt: bool) -> Result<Vec<u8>, String> {
     result
 }
 
-fn load() -> Result<Settings, String> {
+fn read_private_settings(reader: impl Read) -> Result<Settings, String> {
+    let mut bytes = Vec::new();
+    reader.take((MAX_PRIVATE_SETTINGS_BYTES + 1) as u64).read_to_end(&mut bytes)
+        .map_err(|_| "Unable to read private preview settings".to_owned())?;
+    if bytes.len() > MAX_PRIVATE_SETTINGS_BYTES {
+        return Err("Private preview settings exceed the 32 KiB limit".into());
+    }
+    let mut settings: Settings = serde_json::from_slice(&bytes)
+        .map_err(|_| "Invalid private preview settings".to_owned())?;
+    settings.validate()?;
+    if settings.api_url.is_empty() || settings.viewer_token.is_empty()
+        || settings.upload_token.is_empty() || !settings.upload_enabled
+    {
+        return Err("Private preview settings require viewing and enabled upload credentials".into());
+    }
+    settings.credentials_managed = true;
+    Ok(settings)
+}
+
+fn load_private_settings() -> Result<Option<Settings>, String> {
+    let executable = std::env::current_exe()
+        .map_err(|_| "Unable to locate private preview settings".to_owned())?;
+    let directory = executable.parent()
+        .ok_or_else(|| "Unable to locate private preview settings".to_owned())?;
+    match fs::File::open(directory.join("data").join("screen-wall-private.json")) {
+        Ok(file) => read_private_settings(file).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err("Unable to read private preview settings".into()),
+    }
+}
+
+fn select_settings(saved: Option<Settings>, private: Option<Settings>) -> Settings {
+    match saved {
+        Some(saved) if !saved.upload_token.is_empty() => saved,
+        Some(saved) => match private {
+            Some(mut private) => {
+                if !saved.device_name.is_empty() {
+                    private.device_name = saved.device_name;
+                }
+                private
+            }
+            None => saved,
+        },
+        None => private.unwrap_or_default(),
+    }
+}
+
+fn load_saved_settings() -> Result<Option<Settings>, String> {
     let path = settings_path()?;
     let file = match fs::File::open(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Settings::default()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err("Unable to read preview settings".into()),
     };
     let mut bytes = Vec::new();
@@ -159,7 +209,17 @@ fn load() -> Result<Settings, String> {
     let settings: Settings = serde_json::from_slice(&plain)
         .map_err(|_| "Invalid preview settings".to_owned())?;
     settings.validate()?;
-    Ok(settings)
+    Ok(Some(settings))
+}
+
+fn load() -> Result<Settings, String> {
+    let saved = load_saved_settings()?;
+    if let Some(settings) = saved.as_ref() {
+        if !settings.upload_token.is_empty() {
+            return Ok(select_settings(saved, None));
+        }
+    }
+    Ok(select_settings(saved, load_private_settings()?))
 }
 
 fn save(settings: &Settings) -> Result<(), String> {
@@ -256,5 +316,45 @@ mod tests {
         assert!(settings.validate().is_err());
         settings.api_url = "https://example.com".into();
         assert!(settings.validate().is_ok());
+    }
+
+    fn private_settings() -> Settings {
+        read_private_settings(br#"{"viewer_token":"test-viewer","upload_token":"test-uploader","upload_enabled":true}"#.as_slice()).unwrap()
+    }
+
+    #[test]
+    fn private_package_starts_uploading_and_migrates_empty_credentials() {
+        let first = select_settings(None, Some(private_settings()));
+        assert!(first.upload_enabled && first.credentials_managed);
+        assert!(first.device_name.is_empty());
+        assert_eq!(first.interval_seconds, 300);
+        let previous = Settings { device_name: "Office".into(), ..Settings::default() };
+        let migrated = select_settings(Some(previous), Some(private_settings()));
+        assert!(migrated.upload_enabled && migrated.credentials_managed);
+        assert_eq!(migrated.device_name, "Office");
+        assert_eq!(migrated.upload_token, "test-uploader");
+    }
+
+    #[test]
+    fn saved_credentials_and_explicitly_disabled_upload_keep_priority() {
+        let mut saved = private_settings();
+        saved.upload_enabled = false;
+        saved.upload_token = "existing-device-token".into();
+        let restored = select_settings(Some(saved), Some(private_settings()));
+        assert!(!restored.upload_enabled);
+        assert!(restored.credentials_managed);
+        assert_eq!(restored.upload_token, "existing-device-token");
+        assert!(!select_settings(None, None).upload_enabled);
+    }
+
+    #[test]
+    fn private_settings_are_bounded_and_allow_one_second_uploads() {
+        let mut settings = private_settings();
+        settings.interval_seconds = 1;
+        assert!(settings.validate().is_ok());
+        settings.interval_seconds = 0;
+        assert!(settings.validate().is_err());
+        assert!(read_private_settings(br#"{"upload_enabled":true}"#.as_slice()).is_err());
+        assert!(read_private_settings(&vec![b' '; MAX_PRIVATE_SETTINGS_BYTES + 1][..]).is_err());
     }
 }

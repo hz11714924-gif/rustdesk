@@ -61,7 +61,6 @@ class _ScreenWallPageState extends State<ScreenWallPage>
       _error = '屏幕墙设置无效，请重新保存设置';
     }
     _refresh();
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
   }
 
   void _readUploadStatus() {
@@ -76,10 +75,13 @@ class _ScreenWallPageState extends State<ScreenWallPage>
 
   Future<void> _refresh() async {
     if (!mounted) return;
+    _timer?.cancel();
+    if (_refreshing) return;
     _readUploadStatus();
     final client = _client;
-    if (client == null || _refreshing) {
+    if (client == null) {
       setState(() {});
+      _scheduleRefresh();
       return;
     }
     final generation = _generation;
@@ -116,8 +118,14 @@ class _ScreenWallPageState extends State<ScreenWallPage>
     } finally {
       if (mounted && generation == _generation) {
         setState(() => _refreshing = false);
+        _scheduleRefresh();
       }
     }
+  }
+
+  void _scheduleRefresh() {
+    _timer = Timer(Duration(seconds: screenWallPollIntervalSeconds(_devices)),
+        () => _refresh());
   }
 
   void _applyConfig(ScreenWallConfig config) {
@@ -213,19 +221,26 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                                 ? 'CA 证书不能超过 16 KiB'
                                 : null,
                       ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: viewer,
-                        enabled: !saving,
-                        obscureText: true,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        decoration: const InputDecoration(
-                          labelText: '查看令牌',
-                          helperText: '仅上报本机时可留空',
-                          border: OutlineInputBorder(),
+                      if (_config.credentialsManaged)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 14),
+                          child: Text('专用版本已预配置服务凭证，无需填写。'),
                         ),
-                      ),
+                      if (!_config.credentialsManaged) ...[
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: viewer,
+                          enabled: !saving,
+                          obscureText: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          decoration: const InputDecoration(
+                            labelText: '查看令牌',
+                            helperText: '仅上报本机时可留空',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
                       const Divider(height: 32),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -238,22 +253,24 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                         subtitle: const Text(
                             '开启后，本应用运行期间会定时截取本机屏幕缩略图并上传到此服务。可随时关闭。'),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: upload,
-                        enabled: !saving,
-                        obscureText: true,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        decoration: const InputDecoration(
-                          labelText: '上传令牌',
-                          border: OutlineInputBorder(),
+                      if (!_config.credentialsManaged) ...[
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: upload,
+                          enabled: !saving,
+                          obscureText: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          decoration: const InputDecoration(
+                            labelText: '上传令牌',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) => uploadEnabled &&
+                                  (value ?? '').trim().isEmpty
+                              ? '开启本机上报需要填写上传令牌'
+                              : null,
                         ),
-                        validator: (value) => uploadEnabled &&
-                                (value ?? '').trim().isEmpty
-                            ? '开启本机上报需要填写上传令牌'
-                            : null,
-                      ),
+                      ],
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: name,
@@ -261,7 +278,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                         maxLength: 80,
                         decoration: const InputDecoration(
                           labelText: '本机显示名称',
-                          helperText: '留空使用本机默认名称',
+                          helperText: '留空使用本机 RustDesk ID',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -275,15 +292,15 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                         ],
                         decoration: const InputDecoration(
                           labelText: '采集间隔（秒）',
-                          helperText: '30 到 86400 秒，默认 300 秒',
+                          helperText: '1 到 86400 秒，默认 300 秒',
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
                           final seconds = int.tryParse(value ?? '');
                           return seconds == null ||
-                                  seconds < 30 ||
+                                  seconds < 1 ||
                                   seconds > 86400
-                              ? '请输入 30 到 86400 之间的秒数'
+                              ? '请输入 1 到 86400 之间的秒数'
                               : null;
                         },
                       ),
@@ -319,6 +336,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                           uploadToken: upload.text.trim(),
                           deviceName: name.text.trim(),
                           intervalSeconds: int.parse(interval.text),
+                          credentialsManaged: _config.credentialsManaged,
                         );
                         try {
                           config.validate();
@@ -600,7 +618,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '每 30 秒检查更新，仅下载变化的预览'
+                  '每 ${screenWallPollIntervalSeconds(_devices)} 秒检查更新，仅下载变化的预览'
                   '${_lastRefreshed == null ? '' : ' · 更新于 ${_formatTime(_lastRefreshed!.millisecondsSinceEpoch ~/ 1000)}'}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

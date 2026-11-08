@@ -19,6 +19,7 @@ class ScreenWallConfig {
   final String uploadToken;
   final String deviceName;
   final int intervalSeconds;
+  final bool credentialsManaged;
 
   const ScreenWallConfig({
     this.apiUrl = '',
@@ -28,6 +29,7 @@ class ScreenWallConfig {
     this.uploadToken = '',
     this.deviceName = '',
     this.intervalSeconds = 300,
+    this.credentialsManaged = false,
   });
 
   factory ScreenWallConfig.decode(String value) {
@@ -45,6 +47,7 @@ class ScreenWallConfig {
       uploadToken: data['upload_token'] is String ? data['upload_token'] : '',
       deviceName: data['device_name'] is String ? data['device_name'] : '',
       intervalSeconds: interval is int ? interval : 300,
+      credentialsManaged: data['credentials_managed'] == true,
     );
   }
 
@@ -56,6 +59,7 @@ class ScreenWallConfig {
         'upload_token': uploadToken,
         'device_name': deviceName,
         'interval_seconds': intervalSeconds,
+        'credentials_managed': credentialsManaged,
       };
 
   Uri get apiUri {
@@ -78,8 +82,8 @@ class ScreenWallConfig {
     if (uploadEnabled && uploadToken.trim().isEmpty) {
       throw const FormatException('开启本机上报需要填写上传令牌');
     }
-    if (intervalSeconds < 30 || intervalSeconds > 86400) {
-      throw const FormatException('采集间隔必须在 30 到 86400 秒之间');
+    if (intervalSeconds < 1 || intervalSeconds > 86400) {
+      throw const FormatException('采集间隔必须在 1 到 86400 秒之间');
     }
     if (deviceName.length > 80) {
       throw const FormatException('设备名称最多 80 个字符');
@@ -150,7 +154,7 @@ class ScreenWallDevice {
       updatedAt: updated,
       width: width,
       height: height,
-      intervalSeconds: interval is int && interval >= 30 && interval <= 86400
+      intervalSeconds: interval is int && interval >= 1 && interval <= 86400
           ? interval
           : 300,
       imagePath: path,
@@ -162,6 +166,14 @@ class ScreenWallDevice {
     final threshold = intervalSeconds * 2.5;
     return age > (threshold > 600 ? threshold : 600);
   }
+}
+
+int screenWallPollIntervalSeconds(Iterable<ScreenWallDevice> devices) {
+  var seconds = 30;
+  for (final device in devices) {
+    if (device.intervalSeconds < seconds) seconds = device.intervalSeconds;
+  }
+  return seconds.clamp(1, 30).toInt();
 }
 
 class ScreenWallSnapshot {

@@ -34,8 +34,21 @@ void main() {
         () => const ScreenWallConfig(apiUrl: 'http://preview.example.com')
             .validate(),
         throwsFormatException);
-    expect(() => const ScreenWallConfig(intervalSeconds: 29).validate(),
+    expect(() => const ScreenWallConfig(intervalSeconds: 0).validate(),
         throwsFormatException);
+    expect(() => const ScreenWallConfig(intervalSeconds: 1).validate(),
+        returnsNormally);
+    final managed = ScreenWallConfig.decode(jsonEncode(const ScreenWallConfig(
+      apiUrl: 'https://preview.example.com',
+      viewerToken: 'private-viewer',
+      uploadToken: 'private-uploader',
+      uploadEnabled: false,
+      credentialsManaged: true,
+    ).toJson()));
+    expect(managed.credentialsManaged, isTrue);
+    expect(managed.uploadEnabled, isFalse);
+    expect(managed.viewerToken, 'private-viewer');
+    expect(managed.uploadToken, 'private-uploader');
     expect(
         () => const ScreenWallConfig(
                 apiUrl: 'https://preview.example.com', uploadEnabled: true)
@@ -44,6 +57,27 @@ void main() {
     final device = ScreenWallDevice.fromJson(deviceJson());
     expect(device.isStale(1750), isFalse);
     expect(device.isStale(1751), isTrue);
+  });
+
+  test('polling stays at thirty seconds for empty and slow device lists', () {
+    expect(screenWallPollIntervalSeconds([]), 30);
+    expect(screenWallPollIntervalSeconds([
+      ScreenWallDevice.fromJson(deviceJson()),
+    ]), 30);
+  });
+
+  test('polling follows the shortest one-second-capable device interval', () {
+    final fast = deviceJson()..['interval_seconds'] = 1;
+    final medium = deviceJson()..['interval_seconds'] = 5;
+    final fastDevice = ScreenWallDevice.fromJson(fast);
+    expect(fastDevice.intervalSeconds, 1);
+    expect(screenWallPollIntervalSeconds([
+      ScreenWallDevice.fromJson(deviceJson()),
+      ScreenWallDevice.fromJson(medium),
+    ]), 5);
+    expect(screenWallPollIntervalSeconds([
+      ScreenWallDevice.fromJson(medium), fastDevice,
+    ]), 1);
   });
 
   test('polling reuses unchanged images and keeps list and image API base paths',

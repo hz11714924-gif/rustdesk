@@ -60,3 +60,5 @@ flutter/web/
 /third_party/libdrmtap/
 # Local git worktrees
 .worktrees/
+screen-wall-private.json
+private-screen-wall-defaults.json

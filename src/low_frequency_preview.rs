@@ -38,8 +38,8 @@ impl PreviewConfig {
     fn parse(json: &str) -> Result<Self, String> {
         let mut config: Self = serde_json::from_str(json)
             .map_err(|_| "Invalid preview configuration".to_owned())?;
-        if !(30..=86_400).contains(&config.interval_seconds) {
-            return Err("Preview interval must be between 30 and 86400 seconds".to_owned());
+        if !(1..=86_400).contains(&config.interval_seconds) {
+            return Err("Preview interval must be between 1 and 86400 seconds".to_owned());
         }
         if config.name.chars().count() > 128 || config.name.chars().any(char::is_control) {
             return Err("Invalid preview device name".to_owned());
@@ -438,9 +438,9 @@ mod tests {
 
     #[test]
     fn preview_interval_is_bounded() {
-        assert!(PreviewConfig::parse(r#"{"interval_seconds":29}"#).is_err());
+        assert!(PreviewConfig::parse(r#"{"interval_seconds":0}"#).is_err());
         assert!(PreviewConfig::parse(r#"{"interval_seconds":86401}"#).is_err());
-        assert!(PreviewConfig::parse(r#"{"interval_seconds":30}"#).is_ok());
+        assert!(PreviewConfig::parse(r#"{"interval_seconds":1}"#).is_ok());
     }
 
     #[test]

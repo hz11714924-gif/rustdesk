@@ -28,6 +28,8 @@ def main():
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for name in sorted(set(paths)):
             path = root / name
+            if path.name in {"screen-wall-private.json", "private-screen-wall-defaults.json"}:
+                continue
             if name and path.is_file() and path != output:
                 archive.write(path, "rustdesk-screen-wall/" + name)
 
