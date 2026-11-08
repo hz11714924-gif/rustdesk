@@ -195,21 +195,40 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Official vcpkg tool version check failed' }
           [System.IO.File]::WriteAllText((Join-Path $vcpkgRoot 'vcpkgLastBuiltCommitId'), $env:VCPKG_COMMIT_ID)
           $toolMetadata = Get-Content -LiteralPath "$vcpkgRoot/scripts/vcpkg-tools.json" -Raw | ConvertFrom-Json
-          $cmake = @($toolMetadata.tools | Where-Object { $_.name -eq 'cmake' -and $_.os -eq 'windows' -and $_.arch -eq 'amd64' })
-          if ($cmake.Count -ne 1 -or $cmake[0].archive -ne 'cmake-4.4.0-windows-x86_64.zip') { throw 'Unexpected pinned CMake archive' }
           $downloads = Join-Path $vcpkgRoot 'downloads'
           New-Item -ItemType Directory -Force -Path $downloads | Out-Null
-          $cmakeArchive = Join-Path $downloads $cmake[0].archive
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            try {
-              Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci'; Authorization = "Bearer $env:GITHUB_TOKEN" } -Uri 'https://api.github.com/repos/Kitware/CMake/releases/assets/471629612?download=1' -OutFile $cmakeArchive
-              if ((Get-Item -LiteralPath $cmakeArchive).Length -ne 54388920) { throw 'Unexpected CMake archive length' }
-              if ((Get-FileHash -LiteralPath $cmakeArchive -Algorithm SHA512).Hash -ne $cmake[0].sha512) { throw 'CMake archive differs from pinned vcpkg metadata' }
-              break
-            } catch {
-              if ($attempt -eq 3) { throw }
-              Write-Warning "CMake download attempt $attempt failed; retrying in 10 seconds"
-              Start-Sleep -Seconds 10
+          $nativeArchives = @(
+            @{ Archive = 'cmake-4.4.0-windows-x86_64.zip'; Repository = 'Kitware/CMake'; AssetId = 471629612; Length = 54388920 },
+            @{ Archive = 'ninja-win-1.13.2.zip'; Repository = 'ninja-build/ninja'; AssetId = 318863577; Length = 291570 },
+            @{ Archive = 'strawberry-perl-5.42.2.1-64bit-portable.zip'; Repository = 'StrawberryPerl/Perl-Dist-Strawberry'; AssetId = 390497423; Length = 304301401; MetadataScript = 'vcpkg_find_acquire_program(PERL).cmake'; Sha512 = 'e37c541bb6c4f1c0187bf8ba22b19ce9ead87f6bd1e68c05e7fc4eb2c10a4183c3ee732bf1b26071939f525861fae62b6bef04100b31504ab50fffe7526f84e3' },
+            @{ Archive = 'LLVM-15.0.6-win64.exe'; Source = (Join-Path $env:RUNNER_TEMP 'LLVM-15.0.6-win64.exe'); Length = 290951930; MetadataScript = 'vcpkg_find_acquire_program(CLANG).cmake'; Sha512 = '2dd6f3eea106f2b905e6658ea5ea12856d17285adbfba055edc2d6b6389c4c2f7aa001df5cb0d8fb84fa7fa47d5035a7fddf276523b472dd55f150ae25938768' }
+          )
+          foreach ($tool in $nativeArchives) {
+            if ($tool.MetadataScript) {
+              $metadata = Get-Content -LiteralPath (Join-Path "$vcpkgRoot/scripts/cmake" $tool.MetadataScript) -Raw
+              if (-not $metadata.Contains($tool.Sha512)) { throw "Unexpected pinned tool checksum: $($tool.Archive)" }
+              $expectedSha512 = $tool.Sha512
+            } else {
+              $metadata = @($toolMetadata.tools | Where-Object { $_.os -eq 'windows' -and $_.archive -eq $tool.Archive })
+              if ($metadata.Count -ne 1) { throw "Unexpected pinned tool archive: $($tool.Archive)" }
+              $expectedSha512 = $metadata[0].sha512
+            }
+            $archive = Join-Path $downloads $tool.Archive
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                if ($tool.Source) {
+                  Copy-Item -LiteralPath $tool.Source -Destination $archive -Force
+                } else {
+                  Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci'; Authorization = "Bearer $env:GITHUB_TOKEN" } -Uri "https://api.github.com/repos/$($tool.Repository)/releases/assets/$($tool.AssetId)?download=1" -OutFile $archive
+                }
+                if ((Get-Item -LiteralPath $archive).Length -ne $tool.Length) { throw 'Unexpected native tool archive length' }
+                if ((Get-FileHash -LiteralPath $archive -Algorithm SHA512).Hash -ne $expectedSha512) { throw 'Native tool archive differs from pinned vcpkg metadata' }
+                break
+              } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "$($tool.Archive) download attempt $attempt failed; retrying in 10 seconds"
+                Start-Sleep -Seconds 10
+              }
             }
           }
       - uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
