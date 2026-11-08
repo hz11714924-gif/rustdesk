@@ -260,6 +260,7 @@ fn capture_and_upload(
         return Err("RustDesk device ID is not available".to_owned());
     }
     let mut builder = reqwest::blocking::Client::builder()
+        .use_rustls_tls()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(15))
         .https_only(true)
