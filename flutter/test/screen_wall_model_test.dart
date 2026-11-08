@@ -22,6 +22,14 @@ void main() {
     expect(defaults.uploadEnabled, isFalse);
     expect(defaults.intervalSeconds, 300);
     expect(defaults.canView, isFalse);
+    expect(defaults.caPem, isEmpty);
+    const ca = '-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----';
+    final restored = ScreenWallConfig.decode(jsonEncode(
+        const ScreenWallConfig(caPem: ca).toJson()));
+    expect(restored.caPem, ca);
+    expect(
+        () => ScreenWallConfig(caPem: ''.padLeft(16 * 1024 + 1, 'x')).validate(),
+        throwsFormatException);
     expect(
         () => const ScreenWallConfig(apiUrl: 'http://preview.example.com')
             .validate(),
@@ -46,6 +54,7 @@ void main() {
         apiUrl: 'https://preview.example.com/wall/',
         viewerToken: 'viewer-secret',
         uploadToken: 'upload-secret',
+        caPem: '-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----',
       ),
       client: MockClient((request) async {
         final headers = {

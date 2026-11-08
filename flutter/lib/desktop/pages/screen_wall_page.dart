@@ -145,6 +145,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
 
   Future<void> _showSettings() async {
     final api = TextEditingController(text: _config.apiUrl);
+    final ca = TextEditingController(text: _config.caPem);
     final viewer = TextEditingController(text: _config.viewerToken);
     final upload = TextEditingController(text: _config.uploadToken);
     final name = TextEditingController(text: _config.deviceName);
@@ -192,6 +193,24 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                             return error.message;
                           }
                         },
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: ca,
+                        enabled: !saving,
+                        minLines: 3,
+                        maxLines: 5,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(
+                          labelText: '自签 CA 证书（PEM，可选）',
+                          helperText: '留空使用系统信任；自签服务填写 CA 公钥证书，仍校验服务地址',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) =>
+                            utf8.encode(value ?? '').length > 16 * 1024
+                                ? 'CA 证书不能超过 16 KiB'
+                                : null,
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
@@ -293,6 +312,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                         if (!form.currentState!.validate()) return;
                         final config = ScreenWallConfig(
                           apiUrl: api.text.trim(),
+                          caPem: ca.text.trim(),
                           viewerToken: viewer.text.trim(),
                           uploadEnabled: uploadEnabled,
                           uploadToken: upload.text.trim(),
@@ -343,7 +363,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
         ),
       );
     } finally {
-      for (final controller in [api, viewer, upload, name, interval]) {
+      for (final controller in [api, ca, viewer, upload, name, interval]) {
         controller.dispose();
       }
     }

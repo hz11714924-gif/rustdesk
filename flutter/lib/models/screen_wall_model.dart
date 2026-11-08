@@ -4,6 +4,9 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'screen_wall_http_client_stub.dart'
+    if (dart.library.io) 'screen_wall_http_client_io.dart';
+
 const screenWallConfigKey = 'screen-wall-config';
 const screenWallStatusKey = 'screen-wall-status';
 const screenWallMaximumImageBytes = 256 * 1024;
@@ -11,6 +14,7 @@ const screenWallMaximumImageBytes = 256 * 1024;
 class ScreenWallConfig {
   final String apiUrl;
   final String viewerToken;
+  final String caPem;
   final bool uploadEnabled;
   final String uploadToken;
   final String deviceName;
@@ -19,6 +23,7 @@ class ScreenWallConfig {
   const ScreenWallConfig({
     this.apiUrl = '',
     this.viewerToken = '',
+    this.caPem = '',
     this.uploadEnabled = false,
     this.uploadToken = '',
     this.deviceName = '',
@@ -35,6 +40,7 @@ class ScreenWallConfig {
     return ScreenWallConfig(
       apiUrl: data['api_url'] is String ? data['api_url'] : '',
       viewerToken: data['viewer_token'] is String ? data['viewer_token'] : '',
+      caPem: data['ca_pem'] is String ? data['ca_pem'] : '',
       uploadEnabled: data['upload_enabled'] == true,
       uploadToken: data['upload_token'] is String ? data['upload_token'] : '',
       deviceName: data['device_name'] is String ? data['device_name'] : '',
@@ -45,6 +51,7 @@ class ScreenWallConfig {
   Map<String, dynamic> toJson() => {
         'api_url': apiUrl,
         'viewer_token': viewerToken,
+        'ca_pem': caPem,
         'upload_enabled': uploadEnabled,
         'upload_token': uploadToken,
         'device_name': deviceName,
@@ -76,6 +83,15 @@ class ScreenWallConfig {
     }
     if (deviceName.length > 80) {
       throw const FormatException('设备名称最多 80 个字符');
+    }
+    if (utf8.encode(caPem).length > 16 * 1024) {
+      throw const FormatException('CA 证书不能超过 16 KiB');
+    }
+    if (caPem.trim().isNotEmpty &&
+        (!caPem.contains('-----BEGIN CERTIFICATE-----') ||
+            !caPem.contains('-----END CERTIFICATE-----') ||
+            caPem.contains('PRIVATE KEY'))) {
+      throw const FormatException('请填写 PEM 格式的 CA 公钥证书');
     }
     if (viewerToken.contains(RegExp(r'[\r\n]')) ||
         uploadToken.contains(RegExp(r'[\r\n]'))) {
@@ -203,7 +219,7 @@ class ScreenWallClient {
   static const _timeout = Duration(seconds: 20);
 
   ScreenWallClient(this.config, {http.Client? client})
-      : _client = client ?? http.Client(),
+      : _client = client ?? createScreenWallHttpClient(config.caPem),
         _base = config.apiUri {
     config.validate();
   }

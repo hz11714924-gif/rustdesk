@@ -6,6 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::{thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 
 const DEFAULT_INTERVAL: u64 = 300;
+const MAX_CA_PEM_BYTES: usize = 16 * 1024;
 #[cfg(windows)]
 const MAX_JPEG_BYTES: usize = 262_144;
 
@@ -14,6 +15,7 @@ const MAX_JPEG_BYTES: usize = 262_144;
 struct PreviewConfig {
     enabled: bool,
     base_url: String,
+    ca_pem: String,
     upload_token: String,
     name: String,
     interval_seconds: u64,
@@ -24,6 +26,7 @@ impl Default for PreviewConfig {
         Self {
             enabled: false,
             base_url: String::new(),
+            ca_pem: String::new(),
             upload_token: String::new(),
             name: String::new(),
             interval_seconds: DEFAULT_INTERVAL,
@@ -40,6 +43,13 @@ impl PreviewConfig {
         }
         if config.name.chars().count() > 128 || config.name.chars().any(char::is_control) {
             return Err("Invalid preview device name".to_owned());
+        }
+        if config.ca_pem.len() > MAX_CA_PEM_BYTES {
+            return Err("Preview CA certificate exceeds the 16 KiB limit".to_owned());
+        }
+        if !config.ca_pem.is_empty() {
+            reqwest::Certificate::from_pem(config.ca_pem.as_bytes())
+                .map_err(|_| "Invalid preview CA certificate".to_owned())?;
         }
         config.base_url = config.base_url.trim().trim_end_matches('/').to_owned();
         if !config.enabled {
@@ -194,7 +204,6 @@ fn percent_encode(value: &str) -> String {
 
 #[cfg(windows)]
 fn worker(runtime: Arc<Runtime>) {
-    let mut client = None;
     loop {
         let (config, generation) = {
             let mut inner = runtime.inner.lock().unwrap();
@@ -210,7 +219,7 @@ fn worker(runtime: Arc<Runtime>) {
                 }
             }
         };
-        let result = capture_and_upload(&runtime, generation, &config, &mut client);
+        let result = capture_and_upload(&runtime, generation, &config);
         let mut inner = runtime.inner.lock().unwrap();
         if inner.generation == generation && inner.config.enabled {
             match result {
@@ -235,7 +244,6 @@ fn capture_and_upload(
     runtime: &Runtime,
     generation: u64,
     config: &PreviewConfig,
-    client: &mut Option<reqwest::blocking::Client>,
 ) -> Result<(), String> {
     let id = hbb_common::config::Config::get_id();
     {
@@ -251,14 +259,18 @@ fn capture_and_upload(
     if id.trim().is_empty() {
         return Err("RustDesk device ID is not available".to_owned());
     }
-    if client.is_none() {
-        *client = Some(reqwest::blocking::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
-            .https_only(true)
-            .redirect(reqwest::redirect::Policy::none())
-            .build().map_err(|_| "Unable to initialize HTTPS uploader".to_owned())?);
+    let mut builder = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none());
+    if !config.ca_pem.is_empty() {
+        let ca = reqwest::Certificate::from_pem(config.ca_pem.as_bytes())
+            .map_err(|_| "Invalid preview CA certificate".to_owned())?;
+        builder = builder.add_root_certificate(ca);
     }
+    let uploader = builder.build()
+        .map_err(|_| "Unable to initialize HTTPS uploader".to_owned())?;
     {
         let inner = runtime.inner.lock().unwrap();
         if inner.generation != generation || !inner.config.enabled {
@@ -276,7 +288,6 @@ fn capture_and_upload(
         }
         inner.status.state = "uploading";
     }
-    let uploader = client.as_ref().ok_or_else(|| "HTTPS uploader unavailable".to_owned())?;
     let name = if config.name.is_empty() { &id } else { &config.name };
     let response = uploader.put(format!("{}/api/previews/{}", config.base_url, percent_encode(&id)))
         .header(reqwest::header::CONTENT_TYPE, "image/jpeg")
@@ -437,5 +448,12 @@ mod tests {
         assert!(PreviewConfig::parse(r#"{"enabled":true,"base_url":"https://example.com"}"#).is_err());
         assert!(PreviewConfig::parse(r#"{"enabled":true,"base_url":"https://example.com/path","upload_token":"x"}"#).is_ok());
         assert_eq!(percent_encode("电脑 A"), "%E7%94%B5%E8%84%91%20A");
+    }
+
+    #[test]
+    fn invalid_preview_ca_pem_is_rejected() {
+        assert!(PreviewConfig::parse(r#"{"ca_pem":"not a PEM certificate"}"#).is_err());
+        let oversized = serde_json::json!({"ca_pem": "x".repeat(super::MAX_CA_PEM_BYTES + 1)});
+        assert!(PreviewConfig::parse(&oversized.to_string()).is_err());
     }
 }

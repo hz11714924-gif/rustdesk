@@ -108,6 +108,13 @@ jobs:
         run: |
           cd "$(dirname "$(dirname "$(which flutter)")")"
           git apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+      - name: Test Flutter screen wall model
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd flutter
+          flutter pub get
+          flutter test test/screen_wall_model_test.dart
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -132,15 +139,13 @@ jobs:
           python build.py --portable --flutter --skip-portable-pack --hwcodec --vram
           if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
           Move-Item flutter/build/windows/x64/runner/Release rustdesk-screen-wall
-      - name: Test new capture settings and Flutter wall
+      - name: Test new capture settings
         shell: bash
         run: |
           set -euo pipefail
           FEATURES=$(python build.py --portable --flutter --skip-portable-pack --hwcodec --vram --print-features)
           cargo test --locked --release --lib --features "$FEATURES" low_frequency_preview::tests
           cargo test --locked --release --lib --features "$FEATURES" screen_wall_settings::tests
-          cd flutter
-          flutter test test/screen_wall_model_test.dart
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: topmostwindow-artifacts-x64

@@ -17,7 +17,7 @@ use winapi::{
 
 const SETTINGS_KEY: &str = "screen-wall-config";
 const STATUS_KEY: &str = "screen-wall-status";
-const MAX_SETTINGS_BYTES: usize = 32 * 1024;
+const MAX_SETTINGS_BYTES: usize = 64 * 1024;
 const MAGIC: &[u8] = b"RustDeskScreenWall\x01";
 
 lazy_static::lazy_static! {
@@ -29,6 +29,7 @@ lazy_static::lazy_static! {
 #[serde(default)]
 struct Settings {
     api_url: String,
+    ca_pem: String,
     viewer_token: String,
     upload_enabled: bool,
     upload_token: String,
@@ -39,7 +40,8 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            api_url: String::new(),
+            api_url: "https://103.236.79.91:21181".to_owned(),
+            ca_pem: include_str!("../res/screen_wall/preview-ca.pem").to_owned(),
             viewer_token: String::new(),
             upload_enabled: false,
             upload_token: String::new(),
@@ -59,6 +61,11 @@ impl Settings {
         }
         if self.device_name.chars().any(char::is_control) {
             return Err("Invalid preview device name".into());
+        }
+        if self.ca_pem.len() > 16 * 1024
+            || (!self.ca_pem.is_empty() && reqwest::Certificate::from_pem(self.ca_pem.as_bytes()).is_err())
+        {
+            return Err("Invalid preview CA certificate".into());
         }
         for token in [&self.viewer_token, &self.upload_token] {
             if token.len() > 4096 || token.chars().any(|c| c.is_control())
@@ -218,6 +225,7 @@ pub fn set(key: &str, value: &str) -> bool {
         crate::low_frequency_preview::configure(&serde_json::json!({
             "enabled": settings.upload_enabled,
             "base_url": settings.api_url,
+            "ca_pem": settings.ca_pem,
             "upload_token": settings.upload_token,
             "name": settings.device_name,
             "interval_seconds": settings.interval_seconds,
