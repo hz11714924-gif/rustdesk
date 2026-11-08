@@ -292,7 +292,7 @@ class _ScreenWallPageState extends State<ScreenWallPage>
                         ],
                         decoration: const InputDecoration(
                           labelText: '采集间隔（秒）',
-                          helperText: '1 到 86400 秒，默认 300 秒',
+                          helperText: '1 到 86400 秒，默认 1 秒',
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {

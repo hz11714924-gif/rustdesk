@@ -80,9 +80,35 @@ jobs:
         with:
           name: screen-wall-bridge
           path: .
+      - name: Download official LLVM 15.0.6
+        shell: pwsh
+        run: |
+          $sevenZip = (Get-Command 7z -CommandType Application -ErrorAction Stop).Source
+          $llvmArchive = Join-Path $env:RUNNER_TEMP 'LLVM-15.0.6-win64.exe'
+          $llvmDirectory = Join-Path $env:RUNNER_TEMP 'screen-wall-llvm-15.0.6'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci' } -Uri 'https://api.github.com/repos/llvm/llvm-project/releases/assets/87177143?download=1' -OutFile $llvmArchive
+              if ((Get-Item -LiteralPath $llvmArchive).Length -ne 290951930) { throw 'Unexpected LLVM archive length' }
+              $stream = [System.IO.File]::OpenRead($llvmArchive)
+              try {
+                if ($stream.ReadByte() -ne 0x4D -or $stream.ReadByte() -ne 0x5A) { throw 'LLVM archive is not a Windows executable' }
+              } finally { $stream.Dispose() }
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Warning "LLVM download attempt $attempt failed; retrying in 10 seconds"
+              Start-Sleep -Seconds 10
+            }
+          }
+          New-Item -ItemType Directory -Force -Path $llvmDirectory | Out-Null
+          & $sevenZip x $llvmArchive "-o$llvmDirectory" -y
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM archive extraction failed' }
       - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
         with:
           version: "15.0.6"
+          directory: ${{ runner.temp }}/screen-wall-llvm-15.0.6
+          cached: true
       - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
         id: flutter
         with:

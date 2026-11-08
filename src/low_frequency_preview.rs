@@ -5,7 +5,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 #[cfg(windows)]
 use std::{thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 
-const DEFAULT_INTERVAL: u64 = 300;
+const DEFAULT_INTERVAL: u64 = 1;
 const MAX_CA_PEM_BYTES: usize = 16 * 1024;
 #[cfg(windows)]
 const MAX_JPEG_BYTES: usize = 262_144;
@@ -376,7 +376,7 @@ mod windows_capture {
             if source_width <= 0 || source_height <= 0 {
                 return Err("Primary screen is unavailable".to_owned());
             }
-            let scale = (480.0 / source_width as f64).min(270.0 / source_height as f64).min(1.0);
+            let scale = (320.0 / source_width as f64).min(180.0 / source_height as f64).min(1.0);
             let width = ((source_width as f64 * scale).floor() as i32).max(1);
             let height = ((source_height as f64 * scale).floor() as i32).max(1);
             let screen = ScreenDc(GetDC(ptr::null_mut()));
@@ -433,7 +433,7 @@ mod tests {
     fn previews_are_disabled_without_credentials_by_default() {
         let config = PreviewConfig::parse("{}").unwrap();
         assert!(!config.enabled);
-        assert_eq!(config.interval_seconds, 300);
+        assert_eq!(config.interval_seconds, 1);
     }
 
     #[test]

@@ -28,7 +28,7 @@ class ScreenWallConfig {
     this.uploadEnabled = false,
     this.uploadToken = '',
     this.deviceName = '',
-    this.intervalSeconds = 300,
+    this.intervalSeconds = 1,
     this.credentialsManaged = false,
   });
 
@@ -46,7 +46,7 @@ class ScreenWallConfig {
       uploadEnabled: data['upload_enabled'] == true,
       uploadToken: data['upload_token'] is String ? data['upload_token'] : '',
       deviceName: data['device_name'] is String ? data['device_name'] : '',
-      intervalSeconds: interval is int ? interval : 300,
+      intervalSeconds: interval is int ? interval : 1,
       credentialsManaged: data['credentials_managed'] == true,
     );
   }
@@ -156,7 +156,7 @@ class ScreenWallDevice {
       height: height,
       intervalSeconds: interval is int && interval >= 1 && interval <= 86400
           ? interval
-          : 300,
+          : 1,
       imagePath: path,
     );
   }

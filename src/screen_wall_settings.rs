@@ -48,7 +48,7 @@ impl Default for Settings {
             upload_enabled: false,
             upload_token: String::new(),
             device_name: String::new(),
-            interval_seconds: 300,
+            interval_seconds: 1,
             credentials_managed: false,
         }
     }
@@ -303,7 +303,7 @@ mod tests {
     fn preview_defaults_do_not_capture_or_upload() {
         let settings = Settings::default();
         assert!(!settings.upload_enabled);
-        assert_eq!(settings.interval_seconds, 300);
+        assert_eq!(settings.interval_seconds, 1);
         assert!(settings.validate().is_ok());
     }
 
@@ -327,7 +327,7 @@ mod tests {
         let first = select_settings(None, Some(private_settings()));
         assert!(first.upload_enabled && first.credentials_managed);
         assert!(first.device_name.is_empty());
-        assert_eq!(first.interval_seconds, 300);
+        assert_eq!(first.interval_seconds, 1);
         let previous = Settings { device_name: "Office".into(), ..Settings::default() };
         let migrated = select_settings(Some(previous), Some(private_settings()));
         assert!(migrated.upload_enabled && migrated.credentials_managed);
@@ -340,10 +340,12 @@ mod tests {
         let mut saved = private_settings();
         saved.upload_enabled = false;
         saved.upload_token = "existing-device-token".into();
+        saved.interval_seconds = 300;
         let restored = select_settings(Some(saved), Some(private_settings()));
         assert!(!restored.upload_enabled);
         assert!(restored.credentials_managed);
         assert_eq!(restored.upload_token, "existing-device-token");
+        assert_eq!(restored.interval_seconds, 300);
         assert!(!select_settings(None, None).upload_enabled);
     }
 

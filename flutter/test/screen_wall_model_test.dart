@@ -20,7 +20,8 @@ void main() {
       () {
     final defaults = ScreenWallConfig.decode('');
     expect(defaults.uploadEnabled, isFalse);
-    expect(defaults.intervalSeconds, 300);
+    expect(defaults.intervalSeconds, 1);
+    expect(ScreenWallConfig.decode('{}').intervalSeconds, 1);
     expect(defaults.canView, isFalse);
     expect(defaults.caPem, isEmpty);
     const ca = '-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----';
@@ -71,6 +72,8 @@ void main() {
     final medium = deviceJson()..['interval_seconds'] = 5;
     final fastDevice = ScreenWallDevice.fromJson(fast);
     expect(fastDevice.intervalSeconds, 1);
+    final withoutInterval = deviceJson()..remove('interval_seconds');
+    expect(ScreenWallDevice.fromJson(withoutInterval).intervalSeconds, 1);
     expect(screenWallPollIntervalSeconds([
       ScreenWallDevice.fromJson(deviceJson()),
       ScreenWallDevice.fromJson(medium),
