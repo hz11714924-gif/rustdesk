@@ -13,6 +13,7 @@ env:
   FLUTTER_VERSION: "3.24.5"
   VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
   VCPKG_BINARY_SOURCES: "clear"
+  VCPKG_DOWNLOADS: C:\vcpkg\downloads
 
 jobs:
   bridge:
@@ -161,6 +162,56 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           prefix-key: screen-wall-windows-x64
+      - name: Prepare official pinned native tools
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $vcpkgRoot = 'C:\vcpkg'
+          if (-not (Test-Path -LiteralPath "$vcpkgRoot/.git")) {
+            git clone --filter=blob:none --no-checkout https://github.com/microsoft/vcpkg.git $vcpkgRoot
+            if ($LASTEXITCODE -ne 0) { throw 'vcpkg source clone failed' }
+          }
+          git -C $vcpkgRoot fetch --depth=1 origin $env:VCPKG_COMMIT_ID
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned vcpkg source fetch failed' }
+          git -C $vcpkgRoot checkout --detach $env:VCPKG_COMMIT_ID
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned vcpkg source checkout failed' }
+          $vcpkgMetadata = ConvertFrom-StringData (Get-Content -LiteralPath "$vcpkgRoot/scripts/vcpkg-tool-metadata.txt" -Raw)
+          if ($vcpkgMetadata.VCPKG_TOOL_RELEASE_TAG -ne '2026-07-27') { throw 'Unexpected pinned vcpkg tool release' }
+          $vcpkgExe = Join-Path $vcpkgRoot 'vcpkg.exe'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci'; Authorization = "Bearer $env:GITHUB_TOKEN" } -Uri 'https://api.github.com/repos/microsoft/vcpkg-tool/releases/assets/492070117?download=1' -OutFile $vcpkgExe
+              if ((Get-Item -LiteralPath $vcpkgExe).Length -ne 6745912) { throw 'Unexpected vcpkg executable length' }
+              if ((Get-FileHash -LiteralPath $vcpkgExe -Algorithm SHA256).Hash -ne '13b8175e99a884c5ad34249218754b45541a1a63f216e92603aee57a285ac741') { throw 'Unexpected official vcpkg executable digest' }
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Warning "vcpkg tool download attempt $attempt failed; retrying in 10 seconds"
+              Start-Sleep -Seconds 10
+            }
+          }
+          & $vcpkgExe version --disable-metrics
+          if ($LASTEXITCODE -ne 0) { throw 'Official vcpkg tool version check failed' }
+          [System.IO.File]::WriteAllText((Join-Path $vcpkgRoot 'vcpkgLastBuiltCommitId'), $env:VCPKG_COMMIT_ID)
+          $toolMetadata = Get-Content -LiteralPath "$vcpkgRoot/scripts/vcpkg-tools.json" -Raw | ConvertFrom-Json
+          $cmake = @($toolMetadata.tools | Where-Object { $_.name -eq 'cmake' -and $_.os -eq 'windows' -and $_.arch -eq 'amd64' })
+          if ($cmake.Count -ne 1 -or $cmake[0].archive -ne 'cmake-4.4.0-windows-x86_64.zip') { throw 'Unexpected pinned CMake archive' }
+          $downloads = Join-Path $vcpkgRoot 'downloads'
+          New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+          $cmakeArchive = Join-Path $downloads $cmake[0].archive
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci'; Authorization = "Bearer $env:GITHUB_TOKEN" } -Uri 'https://api.github.com/repos/Kitware/CMake/releases/assets/471629612?download=1' -OutFile $cmakeArchive
+              if ((Get-Item -LiteralPath $cmakeArchive).Length -ne 54388920) { throw 'Unexpected CMake archive length' }
+              if ((Get-FileHash -LiteralPath $cmakeArchive -Algorithm SHA512).Hash -ne $cmake[0].sha512) { throw 'CMake archive differs from pinned vcpkg metadata' }
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Warning "CMake download attempt $attempt failed; retrying in 10 seconds"
+              Start-Sleep -Seconds 10
+            }
+          }
       - uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
         with:
           vcpkgDirectory: C:\vcpkg
