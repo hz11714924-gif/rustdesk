@@ -82,13 +82,15 @@ jobs:
           path: .
       - name: Download official LLVM 15.0.6
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $sevenZip = (Get-Command 7z -CommandType Application -ErrorAction Stop).Source
           $llvmArchive = Join-Path $env:RUNNER_TEMP 'LLVM-15.0.6-win64.exe'
           $llvmDirectory = Join-Path $env:RUNNER_TEMP 'screen-wall-llvm-15.0.6'
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             try {
-              Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci' } -Uri 'https://api.github.com/repos/llvm/llvm-project/releases/assets/87177143?download=1' -OutFile $llvmArchive
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci'; Authorization = "Bearer $env:GITHUB_TOKEN" } -Uri 'https://api.github.com/repos/llvm/llvm-project/releases/assets/87177143?download=1' -OutFile $llvmArchive
               if ((Get-Item -LiteralPath $llvmArchive).Length -ne 290951930) { throw 'Unexpected LLVM archive length' }
               $stream = [System.IO.File]::OpenRead($llvmArchive)
               try {
@@ -117,12 +119,14 @@ jobs:
           architecture: x64
       - name: Install upstream Windows engine
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           flutter precache --windows
           if ($LASTEXITCODE -ne 0) { throw 'Flutter precache failed' }
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             try {
-              Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci' } -Uri 'https://api.github.com/repos/rustdesk/engine/releases/assets/210168939?download=1' -OutFile engine.zip
+              Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -MaximumRedirection 10 -ErrorAction Stop -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-screen-wall-ci'; Authorization = "Bearer $env:GITHUB_TOKEN" } -Uri 'https://api.github.com/repos/rustdesk/engine/releases/assets/210168939?download=1' -OutFile engine.zip
               if ((Get-Item -LiteralPath engine.zip).Length -ne 63301215) { throw 'Unexpected Flutter engine archive length' }
               $stream = [System.IO.File]::OpenRead((Join-Path $PWD 'engine.zip'))
               try {
